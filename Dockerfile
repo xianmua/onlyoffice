@@ -18,9 +18,9 @@ FROM onlyoffice/documentserver:latest
 # 复制前端构建产物
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
-# 添加前端 Nginx 配置（监听 8050，不影响 OnlyOffice 的 80）
+# 添加前端 Nginx 配置（监听 8090，不影响 OnlyOffice 的 80）
 RUN echo 'server { \n\
-    listen 8050; \n\
+    listen 8090; \n\
     server_name localhost; \n\
     root /usr/share/nginx/html; \n\
     index index.html; \n\
