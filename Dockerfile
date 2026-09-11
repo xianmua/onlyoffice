@@ -32,7 +32,7 @@ RUN echo 'server { \n\
 # 禁用 JWT
 ENV JWT_ENABLED=false
 
-# 暴露端口：8050=前端，80=OnlyOffice（映射到 8089）
-EXPOSE 8050 80
+# 暴露端口：8090=前端，80=OnlyOffice（映射到 8089）
+EXPOSE 8090 80
 
 CMD ["/app/ds/run-document-server.sh"]

@@ -9,7 +9,7 @@ export default defineConfig({
     assetsDir: 'assets'
   },
   server: {
-    port: 8050,
+    port: 8090,
     fs: {
       strict: false
     },

@@ -46,7 +46,7 @@ async function loadDocument(url) {
     const [docType, fileType] = typeMap[ext]
 
     // 加载 OnlyOffice API（端口 8089）
-    // 前端: http://localhost:8050
+    // 前端: http://localhost:8090
     // OnlyOffice: http://localhost:8089
     const onlyofficeUrl = `${window.location.protocol}//${window.location.hostname}:8089`
     await loadAPI(onlyofficeUrl)
