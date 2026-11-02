@@ -11,7 +11,7 @@ import { readdirSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { cors, readBody, pushLog, tryParseActions, createMemory, createDocContext, PROTOCOL_PROMPT } from './lib.mjs'
+import { cors, readBody, pushLog, tryParseActions, createMemory, createDocContext } from './lib.mjs'
 import * as modDocs from './plugins/docs.mjs'
 import * as modEditorPlugins from './plugins/editor-plugins.mjs'
 import * as modAiServer from '../../plugins/plugin-ai/server.mjs'
@@ -35,7 +35,6 @@ const ctx = {
   tryParseActions,
   memory: createMemory(DATA_DIR),
   docContext: createDocContext(),
-  prompt: PROTOCOL_PROMPT,
   routes: [],
 }
 ctx.get = (pattern, handler, opts) => ctx.routes.push({ method: 'GET', pattern, handler, prefix: !!(opts && opts.prefix) })

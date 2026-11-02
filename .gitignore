@@ -26,4 +26,5 @@ debug.log
 
 # 离线镜像包（太大，不发仓库）
 *.tar.gz
+downloads/
 

@@ -1,6 +1,5 @@
 // 助手后端共享库：多插件公用的 HTTP 帮手 / 动作解析 / 点赞记忆 / 文档上下文。
 // 只放「至少两个模块要用」的东西；插件私有配置与状态留在各 server.mjs 内部。
-export { PROTOCOL_PROMPT } from './prompt.mjs'  // 经 ctx.prompt 注入插件
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
