@@ -116,6 +116,127 @@ function blankDocx() {
   ])
 }
 
+// DS 原生「文件-新建」只有当前类型（文档编辑器=空白 Word）；Excel/PPT 靠 editorConfig.templates
+// 卡片实现（点击 window.open 到 /api/new-doc?type=...），见 App.vue
+export function blankXlsx() {
+  const A = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+  const R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+  return makeZip([
+    {
+      name: '[Content_Types].xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        + '<Default Extension="xml" ContentType="application/xml"/>'
+        + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        + '</Types>'),
+    },
+    {
+      name: '_rels/.rels',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        + '</Relationships>'),
+    },
+    {
+      name: 'xl/workbook.xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + `<workbook ${A} ${R}><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`),
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        + '</Relationships>'),
+    },
+    {
+      name: 'xl/worksheets/sheet1.xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + `<worksheet ${A}><sheetData/></worksheet>`),
+    },
+  ])
+}
+
+export function blankPptx() {
+  const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+  const R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+  const P = `xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ${A} ${R}`
+  // 空 spTree（每页/版式/母版必带）
+  const spTree = '<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>'
+  const rels = (items) => Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + items.map(([id, type, target]) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"/>`).join('')
+    + '</Relationships>')
+  // 最小 theme：clrScheme/fontScheme/fmtScheme（填充、线条、效果、背景各 3 项是 schema 硬性要求）
+  const theme1 = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + `<a:theme ${A} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" name="空白">`
+    + '<a:themeElements><a:clrScheme name="空白"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>'
+    + '<a:fontScheme name="空白"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>'
+    + '<a:fmtScheme name="空白"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst>'
+    + '<a:lnStyleLst><a:ln w="6350"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="12700"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln><a:ln w="19050"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst>'
+    + '<a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst>'
+    + '<a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>'
+  return makeZip([
+    {
+      name: '[Content_Types].xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        + '<Default Extension="xml" ContentType="application/xml"/>'
+        + '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+        + '<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+        + '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
+        + '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
+        + '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
+        + '</Types>'),
+    },
+    {
+      name: '_rels/.rels',
+      data: rels([['rId1', 'officeDocument', 'ppt/presentation.xml']]),
+    },
+    {
+      name: 'ppt/presentation.xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + `<p:presentation ${P}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>`
+        + '<p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>'
+        + '<p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>'),
+    },
+    {
+      name: 'ppt/_rels/presentation.xml.rels',
+      data: rels([['rId1', 'slideMaster', 'slideMasters/slideMaster1.xml'], ['rId2', 'slide', 'slides/slide1.xml'], ['rId3', 'theme', 'theme/theme1.xml']]),
+    },
+    {
+      name: 'ppt/slides/slide1.xml',
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${P}>${spTree}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`),
+    },
+    { name: 'ppt/slides/_rels/slide1.xml.rels', data: rels([['rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml']]) },
+    {
+      name: 'ppt/slideLayouts/slideLayout1.xml',
+      data: Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout ${P} type="blank">${spTree}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`),
+    },
+    { name: 'ppt/slideLayouts/_rels/slideLayout1.xml.rels', data: rels([['rId1', 'slideMaster', '../slideMasters/slideMaster1.xml']]) },
+    {
+      name: 'ppt/slideMasters/slideMaster1.xml',
+      data: Buffer.from('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        + `<p:sldMaster ${P}>${spTree}<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>`
+        + '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>'),
+    },
+    {
+      name: 'ppt/slideMasters/_rels/slideMaster1.xml.rels',
+      data: rels([['rId1', 'slideLayout', '../slideLayouts/slideLayout1.xml'], ['rId2', 'theme', '../../theme/theme1.xml']]),
+    },
+    { name: 'ppt/theme/theme1.xml', data: Buffer.from(theme1) },
+  ])
+}
+
+// 新建入口：type=word(默认)/xlsx/pptx → { 生成器, 文件名 }
+const BLANK_TYPES = {
+  word: () => ({ name: '新建文档.docx', buf: blankDocx() }),
+  xlsx: () => ({ name: '新建表格.xlsx', buf: blankXlsx() }),
+  pptx: () => ({ name: '新建演示.pptx', buf: blankPptx() }),
+}
 // 上传/新建的文件落盘到 uploads/<id>/<安全文件名>，返回 { id, name }
 function sanitizeName(name) {
   const base = path.basename(String(name || ''))
@@ -209,18 +330,30 @@ export function register(ctx) {
     throw new Error('转换失败: ' + JSON.stringify(j.error !== undefined ? { error: j.error } : j).slice(0, 200))
   }
 
-  // === POST /api/new-doc（新建空白文档，返回 DS 可下载的 URL）===
-  ctx.post('/api/new-doc', async (req, res) => {
+  // === /api/new-doc（新建空白文档）：POST {type} 返回 JSON（onRequestCreateNew 用）；
+  // GET ?type= 生成后 302 跳 /?f=<id>（editorConfig.templates 模板卡片 window.open 用）===
+  const newDocHandler = async (req, res, url) => {
     cors(res, req)
+    const u = new URL(url, 'http://x')
+    const type = req.method === 'GET' ? (u.searchParams.get('type') || 'word') : JSON.parse(await readBody(req) || '{}').type || 'word'
+    const gen = BLANK_TYPES[type]
+    if (!gen) {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'type 仅支持 word/xlsx/pptx' })); return
+    }
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-    const name = '新建文档.docx'
     try {
-      await saveUploaded(id, name, blankDocx())
+      const { name, buf } = gen()
+      await saveUploaded(id, name, buf)
+      if (req.method === 'GET') {
+        res.writeHead(302, { Location: `/?f=${id}` }); res.end(); return
+      }
       res.end(JSON.stringify({ ok: true, id, name, url: publicDocUrl(req, id, name) }))
     } catch (e) {
       res.writeHead(500); res.end(JSON.stringify({ error: String(e.message || e) }))
     }
-  })
+  }
+  ctx.post('/api/new-doc', newDocHandler)
+  ctx.get('/api/new-doc', newDocHandler)
 
   // === POST /api/upload?name=<文件名>（本地文件上传，原文体二进制 body）===
   ctx.post('/api/upload', async (req, res, url) => {

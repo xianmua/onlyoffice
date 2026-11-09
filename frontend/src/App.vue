@@ -159,6 +159,12 @@ async function loadDocument(url, f, name, cbOrigin) {
         ...(currentF && currentCb ? { callbackUrl: `${currentCb}/api/callback?f=${encodeURIComponent(currentF)}` } : {}),
         // 最近文档 → 原生「文件-打开最近」面板（本地文件选择走原生「打开」按钮）
         recent: getRecent(),
+        // 原生「文件-新建」只有当前类型卡片；templates 追加 Excel/PPT（点击 window.open，
+        // /api/new-doc?type= 生成后 302 跳 /?f=<id> 在新标签打开）
+        templates: [
+          { url: `${window.location.origin}/api/new-doc?type=xlsx`, title: '空白表格' },
+          { url: `${window.location.origin}/api/new-doc?type=pptx`, title: '空白演示' },
+        ],
         // 仅 docx 挂插件；autostart 是串行队列，config.json 里 isAutostart:true 的至多一个
         ...(docType === 'word' && editorPlugins.length ? {
           plugins: {
