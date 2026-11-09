@@ -15,6 +15,12 @@
     <div v-else-if="error" class="loading">
       <p style="color: #c00;">{{ error }}</p>
     </div>
+
+    <!-- 非阻断提示条（如 ?url= 转托管失败已回退直连预览） -->
+    <div v-if="hint" class="hint-bar">
+      <span>{{ hint }}</span>
+      <span class="hint-close" @click="hint = ''">×</span>
+    </div>
   </div>
 </template>
 
@@ -24,12 +30,22 @@ import { ref, onMounted } from 'vue'
 const loading = ref(true)
 const editorReady = ref(false)
 const error = ref('')
+const hint = ref('') // 非阻断提示（转托管失败回退直连等）
 const authUser = ref(null) // { userid, name } | null（企微登录后由编辑器插件「企微登录」面板获取）
 let currentUrl = ''
 let currentSession = ''
 let currentF = ''
 let currentName = ''
 let currentCb = ''
+let dsOrigin = '' // DS 对外地址（/api/config 下发 DS_ORIGIN），空 = 用默认 hostname:8089
+
+// 运行时配置：.env 的 DS_ORIGIN 改 DS 地址无需重新打包
+async function loadConfig() {
+  try {
+    const j = await (await fetch('/api/config')).json()
+    if (j.dsOrigin) dsOrigin = String(j.dsOrigin).replace(/\/+$/, '')
+  } catch { /* 保持默认 */ }
+}
 
 // 编辑器插件列表：后端动态发现（/api/editor-plugins），失败回落内置列表
 let editorPlugins = [
@@ -108,15 +124,15 @@ async function loadDocument(url, f, name, cbOrigin) {
     }
 
     if (!typeMap[ext]) {
-      throw new Error(`不支持的格式: .${ext}`)
+      throw new Error(`不支持的格式: .${ext}（直链须以 doc/docx/xls/xlsx/ppt/pptx 结尾且可下载；需登录态的链接请先落盘再上传）`)
     }
 
     const [docType, fileType] = typeMap[ext]
 
-    // 加载 OnlyOffice API（端口 8089）
+    // 加载 OnlyOffice API（优先 /api/config 下发的 DS_ORIGIN，缺省 hostname:8089）
     // 前端: http://localhost:8090
     // OnlyOffice: http://localhost:8089
-    const onlyofficeUrl = `${window.location.protocol}//${window.location.hostname}:8089`
+    const onlyofficeUrl = dsOrigin || `${window.location.protocol}//${window.location.hostname}:8089`
     await loadAPI(onlyofficeUrl)
 
     // 直接配置编辑器使用在线 URL
@@ -271,8 +287,8 @@ onMounted(async () => {
     if (d && d.type === 'oo-local-file' && d.file) onPickFile(d.file)
   })
   const params = new URLSearchParams(window.location.search)
-  // 企微登录态先行：本地毫秒级调用，保证 loadDocument 时编辑器身份已就位
-  await initAuth()
+  // 企微登录态 + 运行时配置先行：本地毫秒级调用，保证 loadDocument 时身份与 DS 地址已就位
+  await Promise.all([initAuth(), loadConfig()])
   // 本地文件：地址栏只带文件 id（?f=<id>），向后端反查真实 URL
   const fid = params.get('f')
   if (fid) {
@@ -289,13 +305,13 @@ onMounted(async () => {
   if (url) {
     console.log('📥 加载在线文档:', url)
     // ?url= 自动转托管：先导入落盘再按 ?f= 流程打开，
-    // 保存回调 / AI 改动落盘 / 导出全部可用；导入失败（源站不可达等）回退直连预览
+    // 保存回调 / AI 改动落盘 / 导出全部可用；导入失败（源站不可达等）回退直连预览并给出中文提示
     fetch('/api/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
     })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => r.json().catch(() => null))
       .then((j) => {
         if (j && j.id) {
           console.log('📦 已转托管:', j.id, j.name)
@@ -305,10 +321,16 @@ onMounted(async () => {
           loadDocument(j.url, j.id, j.name, j.callbackOrigin)
         } else {
           console.warn('⚠️ 转托管失败，回退直连预览', j)
+          hint.value = j && j.error
+            ? `远端文档转托管失败：${j.error}，已回退直连预览（该模式下改动无法保存）`
+            : '远端文档转托管失败（源地址可能拉不到），已回退直连预览；若编辑器随后提示「下载失败」即源地址不可达，且改动无法保存'
           loadDocument(url)
         }
       })
-      .catch(() => loadDocument(url))
+      .catch(() => {
+        hint.value = '远端文档转托管失败（服务不可达或源地址拉不到），已回退直连预览；若编辑器提示「下载失败」即源地址不可达，且改动无法保存'
+        loadDocument(url)
+      })
   } else {
     error.value = '请提供 url 参数，例如: ?url=http://example.com/doc.xlsx'
     loading.value = false
@@ -349,6 +371,29 @@ html, body, #app {
   border-top: 4px solid #667eea;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+/* 非阻断提示条 */
+.hint-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px !important;
+  background: #fff7e6;
+  color: #8c6d1f;
+  font-size: 13px;
+  border-bottom: 1px solid #f0e0b0;
+}
+.hint-close {
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
 }
 
 @keyframes spin {

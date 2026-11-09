@@ -38,12 +38,14 @@
   }
 
   // === apiBase 多候选探测：config.js 配置优先，其次同源/常规端口 ===
+  // 去掉尾部斜杠：配置成 'http://ip:8090/' 会拼出 //api/...（404/被前端路由吞掉返回 index.html）
+  const norm = (u) => String(u || '').replace(/\/+$/, '')
   const candidates = [...new Set([
-    ...(window.OO_API_BASE ? [window.OO_API_BASE] : []),
+    ...(window.OO_API_BASE ? [norm(window.OO_API_BASE)] : []),
     location.protocol + '//' + location.hostname + ':8090',
     'http://localhost:8090',
     'http://127.0.0.1:8090',
-    window.location.origin,
+    norm(window.location.origin),
   ])]
   let apiBase = candidates[0]
   let apiReady = false

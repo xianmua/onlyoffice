@@ -89,6 +89,15 @@ for (const ent of rootEntries.sort((a, b) => a.name.localeCompare(b.name))) {
   }
 }
 
+// 兜底路由：未部署企微登录插件（plugin-chat）时 /api/auth/me 返回未登录，避免每次 404。
+// 必须在所有插件加载完之后注册——真路由先注册，此处自动跳过
+if (!ctx.routes.some((r) => r.method === 'GET' && r.pattern === '/api/auth/me')) {
+  ctx.get('/api/auth/me', (req, res) => {
+    ctx.cors(res, req)
+    res.end(JSON.stringify({ authed: false }))
+  })
+}
+
 // === connect 风格 middleware（供 Vite / Nginx 前置使用）===
 // 只接管 /api/*、/files/* 与 /plugins/*（编辑器插件静态文件）；其余请求 next() 交给后续中间件
 export function assistantMiddleware(req, res, next) {

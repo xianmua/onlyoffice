@@ -239,7 +239,15 @@ const BLANK_TYPES = {
 }
 // 上传/新建的文件落盘到 uploads/<id>/<安全文件名>，返回 { id, name }
 function sanitizeName(name) {
-  const base = path.basename(String(name || ''))
+  // 文件名乱码修复：部分运行时（Bun exe 实测）把 percent-encoded query 按 latin1 解码，
+  // UTF-8 字节变成 latin1 字符（测试文档 → æµ‹è¯•...）；重组一次即可还原。
+  // 只在名字里出现 latin1 高位字符时尝试，且重组出 U+FFFD（合法 latin1 文本如 café）时保持原样
+  let s = String(name || '')
+  if (/[\u0080-\u00FF]/.test(s)) {
+    const t = Buffer.from(s, 'latin1').toString('utf8')
+    if (!t.includes('\uFFFD')) s = t
+  }
+  const base = path.basename(s)
   const clean = base.replace(/[^\w.\u4e00-\u9fa5-]+/g, '_').slice(-100)
   return clean || 'document.docx'
 }
@@ -505,6 +513,12 @@ export function register(ctx) {
       if (f && key) docKeyMap.set(String(f).replace(/[^a-z0-9]/gi, ''), String(key))
     } catch {}
     res.end(JSON.stringify({ ok: true }))
+  })
+
+  // === GET /api/config（前端启动时取运行时配置：DS 对外地址，.env 的 DS_ORIGIN 可改，缺省空=前端用 hostname:8089）===
+  ctx.get('/api/config', (req, res) => {
+    cors(res, req)
+    res.end(JSON.stringify({ dsOrigin: (process.env.DS_ORIGIN || '').replace(/\/+$/, '') }))
   })
 
   // === GET /api/export（导出文件流，两种模式）===
