@@ -2,7 +2,7 @@
 // 路由：POST /api/new-doc、POST /api/upload?name=、POST /api/import、POST /api/callback?f=、
 //       POST /api/dockey、GET /api/export?f=|url=&format=、GET /api/doc?f=、GET /files/<id>/<名>
 import fs from 'node:fs/promises'
-import { mkdirSync, readdirSync } from 'node:fs'
+import { mkdirSync, readdirSync, statSync } from 'node:fs'
 import crypto from 'node:crypto'
 import path from 'node:path'
 
@@ -276,6 +276,48 @@ export function register(ctx) {
   // 编辑器当前打开的文档 key（前端注册），forcesave 用
   const docKeyMap = new Map()
 
+  // 删除托管文档（目录整体移除 + 清 key 登记）。返回是否确有此文件
+  function deleteDoc(fid) {
+    const dir = path.join(UPLOAD_DIR, fid)
+    let name = null
+    try { name = readdirSync(dir)[0] } catch {}
+    if (!name) return false
+    fs.rm(dir, { recursive: true, force: true }).catch(() => {})
+    docKeyMap.delete(fid)
+    return true
+  }
+
+  // 过期自动清理：DOC_TTL_HOURS（默认 168h=7 天）内无保存/更新的托管文档定时删除，防止文件无限堆积。
+  // 文件 mtime 在每次 DS 保存回调覆盖时刷新，即「最后一次编辑时间」；集成方需长期留存的场景应提交后导出自存
+  const TTL_MS = Number(process.env.DOC_TTL_HOURS || 168) * 3600 * 1000
+  function sweepExpired() {
+    let entries = []
+    try { entries = readdirSync(UPLOAD_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()) } catch { return }
+    for (const d of entries) {
+      const dir = path.join(UPLOAD_DIR, d.name)
+      try {
+        const file = path.join(dir, readdirSync(dir)[0])
+        if (Date.now() - statSync(file).mtimeMs > TTL_MS) {
+          docKeyMap.delete(d.name)
+          fs.rm(dir, { recursive: true, force: true }).catch(() => {})
+          console.log('[docs] 过期清理:', d.name)
+        }
+      } catch { /* 目录为空或正被写入：跳过本轮 */ }
+    }
+  }
+  sweepExpired()
+  setInterval(sweepExpired, 3600 * 1000).unref()
+
+  // webhook 直通登记：fid → { url, keep }。登记后保存回调不再落盘，下载最终文档直接 POST 给集成方
+  const webhookMap = new Map()
+
+  // DS 保存回调的标准落盘动作：下载最终文档覆盖原文件
+  async function saveCallbackDoc(fid, fileUrl) {
+    const dir = path.join(UPLOAD_DIR, fid)
+    const name = readdirSync(dir)[0]
+    if (name) await fs.writeFile(path.join(dir, name), await fetchSavedDoc(fileUrl))
+  }
+
   // 下载 DS 保存回调里的最终文档。DS 给的 URL 基于它自己认识的地址，
   // 一般 host 侧可直接访问；失败则换 DS 对外地址（DS_BASE）重试
   async function fetchSavedDoc(fileUrl) {
@@ -383,9 +425,15 @@ export function register(ctx) {
     const body = await readBody(req)
     cors(res, req)
     try {
-      const { url: src, name } = JSON.parse(body)
+      const { url: src, name, webhook, keep } = JSON.parse(body)
       if (!src || !/^https?:\/\//i.test(src)) {
         res.writeHead(400); res.end(JSON.stringify({ error: '需要 {url: "http(s)://..."} ' })); return
+      }
+      // webhook 直通（可选）：登记后每次 DS 保存回调把最终文档 POST 到该地址；keep=1 时本地副本保留
+      let hook = null
+      if (webhook) {
+        if (!/^https?:\/\//i.test(webhook)) { res.writeHead(400); res.end(JSON.stringify({ error: 'webhook 须为 http(s) 地址' })); return }
+        hook = { url: webhook, keep: !!keep }
       }
       const r = await fetch(src, { signal: AbortSignal.timeout(60000) })
       if (!r.ok) { res.writeHead(502); res.end(JSON.stringify({ error: '源文件下载失败 HTTP ' + r.status })); return }
@@ -399,6 +447,7 @@ export function register(ctx) {
       }
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
       await saveUploaded(id, finalName, buf)
+      if (hook) webhookMap.set(id, hook)
       // callbackOrigin 与 /api/doc 同源：DS 保存回调回访本服务的地址
       res.end(JSON.stringify({ ok: true, id, name: finalName, url: publicDocUrl(req, id, finalName), callbackOrigin: DOC_PUBLIC_ORIGIN || `http://${req.headers.host || 'localhost:8090'}` }))
     } catch (e) {
@@ -416,9 +465,29 @@ export function register(ctx) {
       const data = JSON.parse(body)
       // status: 2=编辑中自动保存 6=关闭前保存；均携带最新文档 URL。老二进制格式(.doc/.xls/.ppt) DS 会在保存时转回原格式
       if (fid && (data.status === 2 || data.status === 6) && data.url) {
-        const dir = path.join(UPLOAD_DIR, fid)
-        const name = readdirSync(dir)[0]
-        if (name) await fs.writeFile(path.join(dir, name), await fetchSavedDoc(data.url))
+        const hook = webhookMap.get(fid)
+        if (hook) {
+          // webhook 直通：最终文档纯内存下载后 POST 给集成方接收接口，不落盘。
+          // keep=0（默认）转发成功即删本地副本和登记；失败退回落盘保底，登记保留待下次保存重试
+          try {
+            const buf = await fetchSavedDoc(data.url)
+            const r = await fetch(hook.url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: buf,
+              signal: AbortSignal.timeout(30000),
+            })
+            if (!r.ok) throw new Error('HTTP ' + r.status)
+            console.log('[callback] webhook 直通成功:', fid, '->', hook.url)
+            if (!hook.keep) deleteDoc(fid)
+            else saveCallbackDoc(fid, data.url).catch(() => {})
+          } catch (e) {
+            console.error('[callback] webhook 直通失败，退回落盘:', String(e.message || e))
+            await saveCallbackDoc(fid, data.url).catch(() => {})
+          }
+        } else {
+          await saveCallbackDoc(fid, data.url)
+        }
       }
     } catch (e) {
       console.error('[callback] 保存失败:', String(e.message || e))
@@ -515,6 +584,13 @@ export function register(ctx) {
     if (!name) { res.writeHead(404); res.end(JSON.stringify({ error: '文件不存在或已过期' })) ; return }
     // callbackOrigin：DS 容器回访本服务的地址（dev 下 DS 在 bridge 里够不到 localhost，用 docker0 网关；同机部署则用请求 Host）
     res.end(JSON.stringify({ ok: true, id: fid, name, url: publicDocUrl(req, fid, name), callbackOrigin: DOC_PUBLIC_ORIGIN || `http://${req.headers.host || 'localhost:8090'}` }))
+  })
+
+  // === DELETE /api/doc?f=<id>（显式删除托管文档：集成方提交回传后清理，防止文件堆积）===
+  ctx.del('/api/doc', async (req, res, url) => {
+    cors(res, req)
+    const fid = (new URL(url, 'http://x').searchParams.get('f') || '').replace(/[^a-z0-9]/gi, '')
+    res.end(JSON.stringify(fid && deleteDoc(fid) ? { ok: true } : { ok: false, error: '文件不存在' }))
   })
 
   // === GET /files/<id>/<名>（给 OnlyOffice 服务器下载用；纯路径前缀匹配）===

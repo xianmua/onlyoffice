@@ -10,6 +10,7 @@
 | `/api/import` | POST | 远程 URL 导入为托管文档 | 对接推荐 |
 | `/api/upload?name=` | POST | 上传本地文档（二进制 body） | 可选 |
 | `/api/doc?f=` | GET | 查询文档信息 | 辅助 |
+| `/api/doc?f=` | DELETE | 删除托管文档 | 集成推荐 |
 | `/files/<id>/<名>` | GET | 下载原格式文件流 | 辅助 |
 | `/api/new-doc` | POST | 新建空白文档 | 可选 |
 
@@ -75,6 +76,8 @@ Content-Type: application/json
 |---|---|---|---|
 | `url` | body JSON | 是 | 文件直链，`http(s)://` 开头 |
 | `name` | body JSON | 否 | 自定义文件名；省略时从 URL 路径取 |
+| `webhook` | body JSON | 否 | 接收地址（`http(s)://`）：登记后每次 DS 保存回调把最终文档二进制 POST 到该地址（`application/octet-stream`），不走本地落盘 |
+| `keep` | body JSON | 否 | 配合 webhook：`1`=转发后保留本地副本；默认 `0` 转发成功即删本地副本和登记 |
 
 **响应 200**
 
@@ -85,6 +88,15 @@ Content-Type: application/json
 **错误**：400（URL 非法 / 扩展名不支持）；502 `{"error":"源文件下载失败..."}`（源站不可达）；500（下载超时等，内置 60 秒超时）。
 
 > 编辑器直接打开 `?url=<文件URL>` 时前端也会**自动转托管**（内部就是先调本接口再按托管文档打开），AI 改动同样可保存、可导出；导入失败自动回退为直连预览（该模式下改动不落盘）。
+
+**webhook 直通示例**：保存时文档纯内存中转到集成方，适合提交即回传场景：
+
+```bash
+curl -X POST http://localhost:8090/api/import -H "Content-Type: application/json" \
+     -d '{"url":"https://example.com/报告.docx","webhook":"https://siteA/receive-doc"}'
+# 之后用户每次保存（Ctrl+S/关闭/forcesave），最终文档直接 POST 到 siteA/receive-doc
+# webhook 转发失败时自动退回落盘保底，登记保留，下次保存重试
+```
 
 ### 2. 上传本地文档
 
@@ -133,6 +145,16 @@ GET /api/doc?f=<文件id>
 ```
 
 **错误**：404 `{"error":"文件不存在或已过期"}`。
+
+### 删除托管文档
+
+```http
+DELETE /api/doc?f=<文件id>
+```
+
+**响应 200**：`{"ok":true}`（已删除）；`{"ok":false,"error":"文件不存在"}`（不存在或已删）。
+
+集成方在提交回传（导出自存）后调用即可清理服务端文件。另有 **TTL 自动清理**兜底：默认 **7 天**（`DOC_TTL_HOURS` 环境变量可调）内无任何保存动作的托管文档会被定时任务删除，防止文件无限堆积。
 
 ### 下载原格式文件流
 

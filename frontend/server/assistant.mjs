@@ -39,6 +39,7 @@ const ctx = {
 }
 ctx.get = (pattern, handler, opts) => ctx.routes.push({ method: 'GET', pattern, handler, prefix: !!(opts && opts.prefix) })
 ctx.post = (pattern, handler, opts) => ctx.routes.push({ method: 'POST', pattern, handler, prefix: !!(opts && opts.prefix) })
+ctx.del = (pattern, handler, opts) => ctx.routes.push({ method: 'DELETE', pattern, handler, prefix: !!(opts && opts.prefix) })
 
 // 同一文件静态/动态 import 是两个模块实例，须按磁盘路径判重，防外挂扫描重复注册
 const registered = new Set()
